@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+.idea/
+.vscode/
+simple_generate.py
+test_ffgo_handler_mock.py
