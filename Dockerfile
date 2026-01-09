@@ -73,7 +73,8 @@ RUN cd custom_nodes && \
     # Added for FFGO specific nodes:
     # "PainterI2V" usually comes from ComfyUI-Painter
     git clone --depth 1 https://github.com/AlekPet/ComfyUI_Painter && \
-    # "RMBG" class usually comes from ComfyUI-RMBG
+    # "RMBG" class usually comes from ComfyUI-RMBG (ryark or 1038lab)
+    git clone --depth 1 https://github.com/ryark/ComfyUI-RMBG && \
     git clone --depth 1 https://github.com/ZHO-ZHO-ZHO/ComfyUI-RMBG-Enhanced && \
     # "ImageStitch" - verify if it's in a pack or standalone. 
     # Often standard in Essentials or a small repo. 
@@ -84,10 +85,10 @@ RUN cd custom_nodes && \
 
 # Install dependencies for custom nodes
 RUN for node in custom_nodes/*; do \
-        if [ -f "$node/requirements.txt" ]; then \
-            echo "Installing requirements for $node..."; \
-            uv pip install -r "$node/requirements.txt"; \
-        fi; \
+    if [ -f "$node/requirements.txt" ]; then \
+    echo "Installing requirements for $node..."; \
+    uv pip install -r "$node/requirements.txt"; \
+    fi; \
     done && \
     rm -rf /root/.cache/pip /root/.cache/uv /tmp/* /var/tmp/*
 
