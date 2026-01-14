@@ -73,9 +73,8 @@ RUN cd custom_nodes && \
     # Added for FFGO specific nodes:
     # "PainterI2V" usually comes from ComfyUI-Painter
     git clone --depth 1 https://github.com/AlekPet/ComfyUI_Painter && \
-    # "RMBG" class usually comes from ComfyUI-RMBG (ryark or 1038lab)
-    git clone --depth 1 https://github.com/ryark/ComfyUI-RMBG && \
-    git clone --depth 1 https://github.com/ZHO-ZHO-ZHO/ComfyUI-RMBG-Enhanced && \
+    # "RMBG" class comes from 1038lab/ComfyUI-RMBG
+    git clone --depth 1 https://github.com/1038lab/ComfyUI-RMBG && \
     # "ImageStitch" - verify if it's in a pack or standalone. 
     # Often standard in Essentials or a small repo. 
     # For now assuming it might be in EasyUse or KJNodes, but "ImageStitch" class is specific.
