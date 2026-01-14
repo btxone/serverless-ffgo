@@ -95,7 +95,9 @@ RUN for node in custom_nodes/*; do \
 RUN uv pip install runpod requests websocket-client setuptools
 RUN uv pip install timm triton
 RUN uv pip install onnxruntime-gpu
-# Install rembg with [gpu] extra to match onnxruntime-gpu, passing --no-deps for safe measure if conflicts persist, but let's try standard first with [gpu]
+# Install rembg with [gpu] extra to match onnxruntime-gpu
+# Force numba >= 0.59.0 to support Python 3.12 and avoid building ancient llvmlite
+RUN uv pip install "numba>=0.59.0"
 RUN uv pip install "rembg[gpu]" 
 RUN uv pip install sageattention
 
