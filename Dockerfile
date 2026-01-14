@@ -96,8 +96,8 @@ RUN uv pip install runpod requests websocket-client setuptools
 RUN uv pip install timm triton
 RUN uv pip install onnxruntime-gpu
 # Install rembg with [gpu] extra to match onnxruntime-gpu
-# Force numba >= 0.59.0 to support Python 3.12 and avoid building ancient llvmlite
-RUN uv pip install "numba>=0.59.0"
+# Force pymatting >= 1.2.0 to ensure Python 3.12 compatible numba/llvmlite
+RUN uv pip install "pymatting>=1.2.0"
 RUN uv pip install "rembg[gpu]" 
 RUN uv pip install sageattention
 
