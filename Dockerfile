@@ -97,7 +97,7 @@ RUN uv pip install runpod requests websocket-client timm triton setuptools sagea
 # Copy Handler, Start script and Workflow Template
 COPY src/start.sh /start.sh
 COPY handler.py /handler.py
-COPY test_input.json /test_input.json
+COPY ffgo_workflow_v2_api.json /test_input.json
 COPY src/extra_model_paths.yaml /comfyui/extra_model_paths.yaml
 
 RUN chmod +x /start.sh
