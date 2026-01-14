@@ -157,4 +157,19 @@ def handler(job):
         if ws:
             ws.close()
 
+# Debug: Check Volume Mount
+if os.path.exists("/workspace"):
+    print("worker-ffgo - '/workspace' exists.")
+    try:
+        print(f"worker-ffgo - Contents of /workspace: {os.listdir('/workspace')}")
+        # Check for deep nesting just in case
+        if os.path.exists("/workspace/models"):
+             print(f"worker-ffgo - Contents of /workspace/models: {os.listdir('/workspace/models')}")
+             if os.path.exists("/workspace/models/models"):
+                  print(f"worker-ffgo - Contents of /workspace/models/models: {os.listdir('/workspace/models/models')}")
+    except Exception as e:
+        print(f"worker-ffgo - Error listing volume: {e}")
+else:
+    print("worker-ffgo - WARNING: '/workspace' does NOT exist. Check mount path in Template.")
+
 runpod.serverless.start({"handler": handler})

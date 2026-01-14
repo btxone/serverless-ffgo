@@ -92,7 +92,7 @@ RUN for node in custom_nodes/*; do \
     rm -rf /root/.cache/pip /root/.cache/uv /tmp/* /var/tmp/*
 
 # Install Python runtime dependencies for the handler
-RUN uv pip install runpod requests websocket-client timm triton setuptools sageattention
+RUN uv pip install runpod requests websocket-client timm triton setuptools sageattention rembg onnxruntime-gpu
 
 # Copy Handler, Start script and Workflow Template
 COPY src/start.sh /start.sh
