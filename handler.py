@@ -29,6 +29,22 @@ def check_server(url, retries=50, delay=500):
         time.sleep(delay / 1000)
     return False
 
+def wait_for_node(node_name, timeout=120):
+    print(f"worker-ffgo - Waiting for node '{node_name}' to load...")
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            r = requests.get(f"http://{COMFY_HOST}/object_info", timeout=5)
+            if r.status_code == 200:
+                data = r.json()
+                if node_name in data:
+                    print(f"worker-ffgo - Node '{node_name}' loaded.")
+                    return True
+        except Exception:
+            pass
+        time.sleep(2)
+    return False
+
 def upload_images(images):
     if not images:
         return {"status": "success"}
@@ -91,6 +107,10 @@ def handler(job):
     # Check Server
     if not check_server(f"http://{COMFY_HOST}/"):
         return {"error": "ComfyUI server unreachable"}
+
+    # Wait for critical Custom Nodes to load (Fixes Race Condition)
+    if not wait_for_node("RMBG"):
+        return {"error": "Timeout waiting for RMBG node to load. Custom nodes took too long."}
 
     # Upload Images
     if images_input:
