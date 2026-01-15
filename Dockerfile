@@ -11,10 +11,12 @@ ENV PYTHONUNBUFFERED=1
 # Increase build parallel level
 ENV CMAKE_BUILD_PARALLEL_LEVEL=8
 
-# Install Python, git and other necessary tools
+# Install Python, git, build tools and other necessary tools
 RUN apt-get update && apt-get install -y \
     python3.12 \
     python3.12-venv \
+    python3.12-dev \
+    build-essential \
     git \
     wget \
     libgl1 \
@@ -90,10 +92,21 @@ RUN echo "numba>=0.59.0" > /tmp/overrides.txt
 RUN for node in custom_nodes/*; do \
     if [ -f "$node/requirements.txt" ]; then \
     echo "Installing requirements for $node..."; \
-    uv pip install -r "$node/requirements.txt" --override /tmp/overrides.txt; \
+    uv pip install -r "$node/requirements.txt" --override /tmp/overrides.txt || echo "Warning: some deps failed for $node"; \
     fi; \
     done && \
     rm -rf /root/.cache/pip /root/.cache/uv /var/tmp/*
+
+# Explicitly install ComfyUI-RMBG dependencies (critical for RMBG node)
+RUN uv pip install \
+    "huggingface-hub>=0.19.0" \
+    "transparent-background>=1.1.2" \
+    "opencv-python>=4.7.0" \
+    "protobuf>=3.20.2,<6.0.0" \
+    "hydra-core>=1.3.0" \
+    "omegaconf>=2.3.0" \
+    "iopath>=0.1.9" \
+    --override /tmp/overrides.txt
 
 # Install Python runtime dependencies for the handler
 RUN uv pip install runpod requests websocket-client setuptools
