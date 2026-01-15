@@ -74,9 +74,9 @@ RUN cd custom_nodes && \
     git clone --depth 1 https://github.com/kijai/ComfyUI-WanVideoWrapper && \
     # Added for FFGO specific nodes:
     # "PainterI2V" usually comes from ComfyUI-Painter
-    git clone --depth 1 https://github.com/AlekPet/ComfyUI_Painter && \
+    git clone --depth 1 https://github.com/princepainter/ComfyUI-PainterI2V && \
     # "RMBG" class comes from 1038lab/ComfyUI-RMBG
-    git clone --depth 1 https://github.com/1038lab/ComfyUI-RMBG.git && \
+    git clone --depth 1 https://github.com/1038lab/ComfyUI-RMBG && \
     # "ImageStitch" - verify if it's in a pack or standalone. 
     # Often standard in Essentials or a small repo. 
     # For now assuming it might be in EasyUse or KJNodes, but "ImageStitch" class is specific.
