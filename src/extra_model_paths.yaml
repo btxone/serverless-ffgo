@@ -1,10 +1,10 @@
 comfyui:
   base_path: /workspace
 
-  checkpoints: models/models/checkpoints
-  diffusion_models: models/models/diffusion_models
-  loras: models/models/loras
-  vae: models/models/vae
+  checkpoints: models/checkpoints
+  diffusion_models: models/diffusion_models
+  loras: models/loras
+  vae: models/vae
 
-  clip_vision: models/models/clip_vision
-  text_encoders: models/models/text_encoders
+  clip_vision: models/clip_vision
+  text_encoders: models/text_encoders
