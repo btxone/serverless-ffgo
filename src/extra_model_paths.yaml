@@ -1,13 +1,10 @@
 comfyui:
-    base_path: /workspace
-    checkpoints: models/models/checkpoints
-    clip: models/models/clip
-    clip_vision: models/models/clip_vision
-    configs: models/models/configs
-    controlnet: models/models/controlnet
-    diffusion_models: models/models/diffusion_models
-    embeddings: models/models/embeddings
-    loras: models/models/loras
-    upscale_models: models/models/upscale_models
-    vae: models/models/vae
-    vfi: models/models/vfi
+  base_path: /workspace
+
+  checkpoints: models/models/checkpoints
+  diffusion_models: models/models/diffusion_models
+  loras: models/models/loras
+  vae: models/models/vae
+
+  clip_vision: models/models/clip_vision
+  text_encoders: models/models/text_encoders
