@@ -110,6 +110,10 @@ def handler(job):
 
     # Wait for critical Custom Nodes to load (Fixes Race Condition)
     if not wait_for_node("RMBG"):
+        if os.path.exists("/workspace/comfy_start.log"):
+            print("===== COMFY START LOG =====")
+            with open("/workspace/comfy_start.log", "r") as f:
+                print(f.read())
         return {"error": "Timeout waiting for RMBG node to load. Custom nodes took too long."}
 
     # Upload Images

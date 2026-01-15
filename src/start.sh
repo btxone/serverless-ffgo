@@ -16,7 +16,13 @@ if [ "$SERVE_API_LOCALLY" == "true" ]; then
     echo "worker-comfyui: Starting RunPod Handler"
     python -u /handler.py --rp_serve_api --rp_api_host=0.0.0.0
 else
-    python -u /comfyui/main.py --disable-auto-launch --disable-metadata --verbose "${COMFY_LOG_LEVEL}" --log-stdout &
+    echo "========= CUSTOM NODE LOAD LOG ========="
+    python -u /comfyui/main.py \
+      --disable-auto-launch \
+      --disable-metadata \
+      --verbose DEBUG \
+      --log-stdout \
+      2>&1 | tee /workspace/comfy_start.log &
 
     echo "worker-comfyui: Starting RunPod Handler"
     python -u /handler.py
