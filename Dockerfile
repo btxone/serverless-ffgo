@@ -82,25 +82,27 @@ RUN cd custom_nodes && \
     git clone --depth 1 https://github.com/cubiq/ComfyUI_essentials && \
     find . -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
-# Install dependencies for custom nodes
+# Pre-install Python 3.12 compatible numba/llvmlite before any packages that depend on pymatting
+RUN uv pip install "numba>=0.59.0"
+RUN echo "numba>=0.59.0" > /tmp/overrides.txt
+
+# Install dependencies for custom nodes (with numba override for pymatting compatibility)
 RUN for node in custom_nodes/*; do \
     if [ -f "$node/requirements.txt" ]; then \
     echo "Installing requirements for $node..."; \
-    uv pip install -r "$node/requirements.txt"; \
+    uv pip install -r "$node/requirements.txt" --override /tmp/overrides.txt; \
     fi; \
     done && \
-    rm -rf /root/.cache/pip /root/.cache/uv /tmp/* /var/tmp/*
+    rm -rf /root/.cache/pip /root/.cache/uv /var/tmp/*
 
 # Install Python runtime dependencies for the handler
 RUN uv pip install runpod requests websocket-client setuptools
 RUN uv pip install timm triton
 RUN uv pip install onnxruntime-gpu
-# Install rembg with [gpu] extra to match onnxruntime-gpu
-# Use override to force Python 3.12 compatible numba/llvmlite versions
-RUN uv pip install "numba>=0.59.0"
-RUN echo "numba>=0.59.0" > /tmp/overrides.txt && \
-    uv pip install "rembg[gpu]" --override /tmp/overrides.txt && \
-    rm /tmp/overrides.txt 
+
+# Install rembg with [gpu] extra (uses numba override for Python 3.12 compatibility)
+RUN uv pip install "rembg[gpu]" --override /tmp/overrides.txt && \
+    rm -rf /tmp/* 
 RUN uv pip install sageattention
 
 # Copy Handler, Start script and Workflow Template
