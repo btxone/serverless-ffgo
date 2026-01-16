@@ -130,15 +130,9 @@ def handler(job):
     if not check_server(f"http://{COMFY_HOST}/"):
         return {"error": "ComfyUI server unreachable after retries"}
 
-    # 2. Wait for Critical Nodes (RMBG in this workflow)
-    # This prevents the job from running before plugins are ready
+    # 2. Wait for Critical Nodes
     if not wait_for_node("RMBG"):
-        # If timeout, read the log file created by start.sh to debug
-        if os.path.exists("/workspace/comfy_start.log"):
-            print("===== COMFY START LOG =====")
-            with open("/workspace/comfy_start.log", "r") as f:
-                print(f.read())
-        return {"error": "Timeout waiting for RMBG node to load. Check logs."}
+        return {"error": "Timeout waiting for RMBG node to load."}
 
     # 3. Upload Input Images (if any)
     if images_input:
@@ -152,7 +146,8 @@ def handler(job):
     
     try:
         ws = websocket.WebSocket()
-        ws.connect(f"ws://{COMFY_HOST}/ws?clientId={client_id}", timeout=10)
+        # === CORRECCIÓN AQUÍ: Timeout aumentado a 300 segundos ===
+        ws.connect(f"ws://{COMFY_HOST}/ws?clientId={client_id}", timeout=300)
         
         # Queue Workflow
         queue_resp = queue_workflow(workflow, client_id)
@@ -161,6 +156,7 @@ def handler(job):
         
         # Monitor Execution via WebSocket
         while True:
+            # El recv esperará hasta 300 segundos por un mensaje nuevo
             out = ws.recv()
             if isinstance(out, str):
                 msg = json.loads(out)
@@ -181,13 +177,11 @@ def handler(job):
         results = []
         
         for node_id, node_out in outputs.items():
-            # Handle Video Outputs (WanVideo / VHS)
             if "videos" in node_out:
                 for vid in node_out["videos"]:
                     fname = vid["filename"]
                     data = get_image_data(fname, vid.get("subfolder",""), vid.get("type"))
                     
-                    # Option A: Upload to S3 (RunPod Bucket)
                     if os.environ.get("BUCKET_ENDPOINT_URL"):
                          with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tf:
                              tf.write(data)
@@ -195,13 +189,10 @@ def handler(job):
                          s3_url = rp_upload.upload_image(job_id, tf_path)
                          os.remove(tf_path)
                          results.append({"type": "s3_url", "data": s3_url, "filename": fname})
-                    
-                    # Option B: Return Base64 (Direct Response)
                     else:
                         b64 = base64.b64encode(data).decode("utf-8")
                         results.append({"type": "base64", "data": b64, "filename": fname})
             
-            # Handle Image Outputs (Standard)
             elif "images" in node_out:
                 for img in node_out["images"]:
                     fname = img["filename"]
@@ -222,22 +213,9 @@ def handler(job):
 # ==========================================
 # SYSTEM STARTUP CHECK
 # ==========================================
-# This runs once when the container starts to verify mounts
-
 if os.path.exists(NETWORK_VOLUME_PATH):
     print(f"worker-ffgo - '{NETWORK_VOLUME_PATH}' detected.")
-    try:
-        # Check specific model folder to confirm mount is correct
-        model_path = f"{NETWORK_VOLUME_PATH}/models"
-        if os.path.exists(model_path):
-             print(f"worker-ffgo - contents of {model_path}: {os.listdir(model_path)}")
-        else:
-             print(f"worker-ffgo - WARNING: 'models' folder not found inside {NETWORK_VOLUME_PATH}")
-    except Exception as e:
-        print(f"worker-ffgo - Error listing volume: {e}")
 else:
     print(f"worker-ffgo - WARNING: '{NETWORK_VOLUME_PATH}' does NOT exist.")
-    print("If you are in Serverless, check 'Network Volume' configuration in the template.")
-    print("Expected mount path: /runpod-volume")
 
 runpod.serverless.start({"handler": handler})
