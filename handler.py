@@ -13,12 +13,22 @@ import uuid
 import tempfile
 import traceback
 
-# Host where ComfyUI is running
+# ==========================================
+# CONFIGURATION
+# ==========================================
 COMFY_HOST = "127.0.0.1:8188"
 WEBSOCKET_RECONNECT_ATTEMPTS = int(os.environ.get("WEBSOCKET_RECONNECT_ATTEMPTS", 5))
 WEBSOCKET_RECONNECT_DELAY_S = int(os.environ.get("WEBSOCKET_RECONNECT_DELAY_S", 3))
 
+# Network Volume Path for Serverless (Verification)
+NETWORK_VOLUME_PATH = "/runpod-volume"
+
+# ==========================================
+# HELPER FUNCTIONS
+# ==========================================
+
 def check_server(url, retries=50, delay=500):
+    """Checks if ComfyUI is reachable."""
     for i in range(retries):
         try:
             response = requests.get(url, timeout=5)
@@ -29,7 +39,11 @@ def check_server(url, retries=50, delay=500):
         time.sleep(delay / 1000)
     return False
 
-def wait_for_node(node_name, timeout=120):
+def wait_for_node(node_name, timeout=180):
+    """
+    Waits for a specific custom node to be loaded by ComfyUI.
+    Increased timeout for heavy models like Wan2.1
+    """
     print(f"worker-ffgo - Waiting for node '{node_name}' to load...")
     start = time.time()
     while time.time() - start < timeout:
@@ -46,6 +60,7 @@ def wait_for_node(node_name, timeout=120):
     return False
 
 def upload_images(images):
+    """Uploads Base64 images to ComfyUI input directory."""
     if not images:
         return {"status": "success"}
     
@@ -71,6 +86,7 @@ def upload_images(images):
     return {"status": "success"}
 
 def queue_workflow(workflow, client_id):
+    """Submits the workflow to the queue."""
     payload = {"prompt": workflow, "client_id": client_id}
     data = json.dumps(payload).encode("utf-8")
     resp = requests.post(f"http://{COMFY_HOST}/prompt", data=data, headers={"Content-Type": "application/json"}, timeout=30)
@@ -79,16 +95,22 @@ def queue_workflow(workflow, client_id):
     return resp.json()
 
 def get_history(prompt_id):
+    """Retrieves execution history/results."""
     resp = requests.get(f"http://{COMFY_HOST}/history/{prompt_id}", timeout=30)
     resp.raise_for_status()
     return resp.json()
 
 def get_image_data(filename, subfolder, image_type):
+    """Downloads the generated image/video from ComfyUI."""
     data = {"filename": filename, "subfolder": subfolder, "type": image_type}
     query = urllib.parse.urlencode(data)
     resp = requests.get(f"http://{COMFY_HOST}/view?{query}", timeout=60)
     resp.raise_for_status()
     return resp.content
+
+# ==========================================
+# MAIN HANDLER
+# ==========================================
 
 def handler(job):
     job_input = job["input"]
@@ -104,25 +126,27 @@ def handler(job):
     if not workflow:
         return {"error": "Missing 'workflow' in input"}
     
-    # Check Server
+    # 1. Check Server Availability
     if not check_server(f"http://{COMFY_HOST}/"):
-        return {"error": "ComfyUI server unreachable"}
+        return {"error": "ComfyUI server unreachable after retries"}
 
-    # Wait for critical Custom Nodes to load (Fixes Race Condition)
+    # 2. Wait for Critical Nodes (RMBG in this workflow)
+    # This prevents the job from running before plugins are ready
     if not wait_for_node("RMBG"):
+        # If timeout, read the log file created by start.sh to debug
         if os.path.exists("/workspace/comfy_start.log"):
             print("===== COMFY START LOG =====")
             with open("/workspace/comfy_start.log", "r") as f:
                 print(f.read())
-        return {"error": "Timeout waiting for RMBG node to load. Custom nodes took too long."}
+        return {"error": "Timeout waiting for RMBG node to load. Check logs."}
 
-    # Upload Images
+    # 3. Upload Input Images (if any)
     if images_input:
         upload_res = upload_images(images_input)
         if upload_res.get("status") == "error":
             return {"error": "Image upload failed", "details": upload_res}
 
-    # Connect WebSocket
+    # 4. Connect WebSocket & Execute
     ws = None
     client_id = str(uuid.uuid4())
     
@@ -130,37 +154,40 @@ def handler(job):
         ws = websocket.WebSocket()
         ws.connect(f"ws://{COMFY_HOST}/ws?clientId={client_id}", timeout=10)
         
-        # Queue
+        # Queue Workflow
         queue_resp = queue_workflow(workflow, client_id)
         prompt_id = queue_resp["prompt_id"]
         print(f"worker-ffgo - Queued: {prompt_id}")
         
-        # Monitor
+        # Monitor Execution via WebSocket
         while True:
             out = ws.recv()
             if isinstance(out, str):
                 msg = json.loads(out)
+                
                 if msg["type"] == "executing":
                     data = msg["data"]
                     if data["node"] is None and data["prompt_id"] == prompt_id:
-                        print("worker-ffgo - Finished")
+                        print("worker-ffgo - Finished execution")
                         break
                 elif msg["type"] == "execution_error":
                      data = msg["data"]
                      if data["prompt_id"] == prompt_id:
                          raise ValueError(f"Execution error: {data.get('exception_message')}")
 
-        # Result
+        # 5. Retrieve Results
         history = get_history(prompt_id)
         outputs = history[prompt_id]["outputs"]
         results = []
         
         for node_id, node_out in outputs.items():
+            # Handle Video Outputs (WanVideo / VHS)
             if "videos" in node_out:
                 for vid in node_out["videos"]:
                     fname = vid["filename"]
                     data = get_image_data(fname, vid.get("subfolder",""), vid.get("type"))
                     
+                    # Option A: Upload to S3 (RunPod Bucket)
                     if os.environ.get("BUCKET_ENDPOINT_URL"):
                          with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tf:
                              tf.write(data)
@@ -168,32 +195,49 @@ def handler(job):
                          s3_url = rp_upload.upload_image(job_id, tf_path)
                          os.remove(tf_path)
                          results.append({"type": "s3_url", "data": s3_url, "filename": fname})
+                    
+                    # Option B: Return Base64 (Direct Response)
                     else:
                         b64 = base64.b64encode(data).decode("utf-8")
                         results.append({"type": "base64", "data": b64, "filename": fname})
-                        
+            
+            # Handle Image Outputs (Standard)
+            elif "images" in node_out:
+                for img in node_out["images"]:
+                    fname = img["filename"]
+                    data = get_image_data(fname, img.get("subfolder",""), img.get("type"))
+                    b64 = base64.b64encode(data).decode("utf-8")
+                    results.append({"type": "base64", "data": b64, "filename": fname})
+
         return {"output": results}
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error executing workflow: {e}")
+        traceback.print_exc()
         return {"error": str(e)}
     finally:
         if ws:
             ws.close()
 
-# Debug: Check Volume Mount
-if os.path.exists("/workspace"):
-    print("worker-ffgo - '/workspace' exists.")
+# ==========================================
+# SYSTEM STARTUP CHECK
+# ==========================================
+# This runs once when the container starts to verify mounts
+
+if os.path.exists(NETWORK_VOLUME_PATH):
+    print(f"worker-ffgo - '{NETWORK_VOLUME_PATH}' detected.")
     try:
-        print(f"worker-ffgo - Contents of /workspace: {os.listdir('/workspace')}")
-        # Check for deep nesting just in case
-        if os.path.exists("/workspace/models"):
-             print(f"worker-ffgo - Contents of /workspace/models: {os.listdir('/workspace/models')}")
-             if os.path.exists("/workspace/models/models"):
-                  print(f"worker-ffgo - Contents of /workspace/models/models: {os.listdir('/workspace/models/models')}")
+        # Check specific model folder to confirm mount is correct
+        model_path = f"{NETWORK_VOLUME_PATH}/models"
+        if os.path.exists(model_path):
+             print(f"worker-ffgo - contents of {model_path}: {os.listdir(model_path)}")
+        else:
+             print(f"worker-ffgo - WARNING: 'models' folder not found inside {NETWORK_VOLUME_PATH}")
     except Exception as e:
         print(f"worker-ffgo - Error listing volume: {e}")
 else:
-    print("worker-ffgo - WARNING: '/workspace' does NOT exist. Check mount path in Template.")
+    print(f"worker-ffgo - WARNING: '{NETWORK_VOLUME_PATH}' does NOT exist.")
+    print("If you are in Serverless, check 'Network Volume' configuration in the template.")
+    print("Expected mount path: /runpod-volume")
 
 runpod.serverless.start({"handler": handler})
