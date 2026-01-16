@@ -12,6 +12,7 @@ ENV PYTHONUNBUFFERED=1
 ENV CMAKE_BUILD_PARALLEL_LEVEL=8
 
 # Install Python, git, build tools and other necessary tools
+# AÑADIDO: curl para el healthcheck del start.sh
 RUN apt-get update && apt-get install -y \
     python3.12 \
     python3.12-venv \
@@ -19,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     git \
     wget \
+    curl \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
@@ -51,44 +53,22 @@ RUN /usr/bin/yes | comfy --workspace /comfyui install --version "${COMFYUI_VERSI
 WORKDIR /comfyui
 
 # Install Custom Nodes for FFGO Workflow
-# Identified nodes:
-# - VideoHelperSuite (VHS_VideoCombine)
-# - WanVideoWrapper (WanVideoNAG, UNETLoader, CLIPLoader, etc.)
-# - ComfyUI-KJNodes (GetImageRangeFromBatch, ImageResizeKJv2, PatchSageAttentionKJ)
-# - ComfyUI-Easy-Use (easy mathInt)
-# - ComfyUI_Comfyroll_CustomNodes (not explicitly seen but often useful, skipping if not in JSON)
-# - ComfyUI-PainterNodes (PainterI2V) - Wait, "PainterI2V" class type. Need to find repo. 
-#   Searching common painter nodes: likely ComfyUI-Painter or similar. 
-#   Checking JSON: "PainterI2V" class. Likely "ComfyUI-Painter".
-#   Let's check "RMBG" -> ComfyUI-RMBG or standard ? RMBG is often in ComfyUI-Inference-Core-Nodes or similar.
-#   "ImageStitch" -> ComfyUI-Image-Stitch or similar.
-#   "GetImageRangeFromBatch" -> KJNodes.
-#
-# Let's start with the ones we know from the original Dockerfile + extras.
-
 RUN cd custom_nodes && \
     git clone --depth 1 https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite && \
     git clone --depth 1 https://github.com/yolain/ComfyUI-Easy-Use && \
     git clone --depth 1 https://github.com/kijai/ComfyUI-KJNodes && \
     git clone --depth 1 https://github.com/Fannovel16/ComfyUI-Frame-Interpolation && \
     git clone --depth 1 https://github.com/kijai/ComfyUI-WanVideoWrapper && \
-    # Added for FFGO specific nodes:
-    # "PainterI2V" usually comes from ComfyUI-Painter
     git clone --depth 1 https://github.com/princepainter/ComfyUI-PainterI2V && \
-    # "RMBG" class comes from 1038lab/ComfyUI-RMBG
     git clone --depth 1 https://github.com/1038lab/ComfyUI-RMBG && \
-    # "ImageStitch" - verify if it's in a pack or standalone. 
-    # Often standard in Essentials or a small repo. 
-    # For now assuming it might be in EasyUse or KJNodes, but "ImageStitch" class is specific.
-    # Let's add ComfyUI-Essentials just in case as it has many utilities.
     git clone --depth 1 https://github.com/cubiq/ComfyUI_essentials && \
     find . -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
-# Pre-install Python 3.12 compatible numba/llvmlite before any packages that depend on pymatting
+# Pre-install Python 3.12 compatible numba/llvmlite
 RUN uv pip install "numba>=0.59.0"
 RUN echo "numba>=0.59.0" > /tmp/overrides.txt
 
-# Install dependencies for custom nodes (with numba override for pymatting compatibility)
+# Install dependencies for custom nodes
 RUN for node in custom_nodes/*; do \
     if [ -f "$node/requirements.txt" ]; then \
     echo "Installing requirements for $node..."; \
@@ -97,8 +77,17 @@ RUN for node in custom_nodes/*; do \
     done && \
     rm -rf /root/.cache/pip /root/.cache/uv /var/tmp/*
 
-# Explicitly install ComfyUI-RMBG dependencies (critical for RMBG node)
+# AÑADIDO: Dependencias críticas faltantes (ONNX para Wan, SAM2 para RMBG)
 RUN uv pip install \
+    runpod \
+    requests \
+    websocket-client \
+    setuptools \
+    timm \
+    triton \
+    onnx \
+    onnxruntime-gpu \
+    sageattention \
     "huggingface-hub>=0.19.0" \
     "transparent-background>=1.1.2" \
     "opencv-python>=4.7.0" \
@@ -106,17 +95,10 @@ RUN uv pip install \
     "hydra-core>=1.3.0" \
     "omegaconf>=2.3.0" \
     "iopath>=0.1.9" \
-    --override /tmp/overrides.txt
+    "rembg[gpu]"
 
-# Install Python runtime dependencies for the handler
-RUN uv pip install runpod requests websocket-client setuptools
-RUN uv pip install timm triton
-RUN uv pip install onnxruntime-gpu
-
-# Install rembg with [gpu] extra (uses numba override for Python 3.12 compatibility)
-RUN uv pip install "rembg[gpu]" --override /tmp/overrides.txt && \
-    rm -rf /tmp/* 
-RUN uv pip install sageattention
+# Install SAM2 from git (Fix for 'No module named sam2')
+RUN uv pip install git+https://github.com/facebookresearch/sam2.git
 
 # Copy Handler, Start script and Workflow Template
 COPY src/start.sh /start.sh

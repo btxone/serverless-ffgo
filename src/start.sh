@@ -12,20 +12,9 @@ fi
 echo "worker-comfyui: Starting FFGO Serverless"
 
 # ===============================
-# Ensure persistent model paths
-# ===============================
-echo "worker-comfyui: Preparing /workspace model directories"
-
-mkdir -p /workspace/models/{checkpoints,diffusion_models,text_encoders,clip_vision,vae,loras}
-
-# Optional: quick visibility
-echo "worker-comfyui: /workspace/models structure:"
-find /workspace/models -maxdepth 2 -type d
-
-# ===============================
 # Logging
 # ===============================
-: "${COMFY_LOG_LEVEL:=DEBUG}"
+: "${COMFY_LOG_LEVEL:=INFO}"
 LOG_FILE="/workspace/comfy_start.log"
 
 # ===============================
@@ -33,22 +22,29 @@ LOG_FILE="/workspace/comfy_start.log"
 # ===============================
 echo "worker-comfyui: Launching ComfyUI with extra_model_paths.yaml"
 
+# RunComfyUI in background
 python -u /comfyui/main.py \
   --disable-auto-launch \
   --disable-metadata \
+  --listen 127.0.0.1 \
+  --port 8188 \
   --extra-model-paths-config /comfyui/extra_model_paths.yaml \
   --verbose "${COMFY_LOG_LEVEL}" \
-  --log-stdout \
   2>&1 | tee "$LOG_FILE" &
 
 # ===============================
 # Wait for ComfyUI API
 # ===============================
 echo "worker-comfyui: Waiting for ComfyUI API..."
-for i in {1..60}; do
+# Loop wait until curl succeeds
+for i in {1..120}; do
   if curl -s http://127.0.0.1:8188/ > /dev/null; then
     echo "worker-comfyui: ComfyUI is up"
     break
+  fi
+  if [ $i -eq 120 ]; then
+    echo "worker-comfyui: Timed out waiting for ComfyUI"
+    exit 1
   fi
   sleep 1
 done

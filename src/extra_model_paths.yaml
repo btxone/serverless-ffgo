@@ -1,10 +1,11 @@
 comfyui:
-  base_path: /workspace
+  # RUTA CRÍTICA: En Serverless es /runpod-volume + tu carpeta models
+  base_path: /runpod-volume/models
 
-  checkpoints: models/checkpoints
-  diffusion_models: models/diffusion_models
-  loras: models/loras
-  vae: models/vae
-
-  clip_vision: models/clip_vision
-  text_encoders: models/text_encoders
+  # Carpetas que SÍ existen en tu imagen (Mapeo directo)
+  checkpoints: checkpoints
+  diffusion_models: diffusion_models
+  loras: loras
+  vae: vae
+  clip_vision: clip_vision
+  text_encoders: text_encoders
