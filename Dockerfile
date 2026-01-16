@@ -103,7 +103,7 @@ RUN uv pip install git+https://github.com/facebookresearch/sam2.git
 # Copy Handler, Start script and Workflow Template
 COPY src/start.sh /start.sh
 COPY handler.py /handler.py
-COPY ffgo_workflow_v2_api.json /test_input.json
+COPY ffgo_workflow_v2_api.json /ffgo_workflow_v2_api.json
 COPY src/extra_model_paths.yaml /comfyui/extra_model_paths.yaml
 
 RUN chmod +x /start.sh
