@@ -119,14 +119,14 @@ def handler(job):
     if not job_input:
         return {"error": "No input provided"}
 
-    # Generic Handler: Expects 'workflow' and optional 'images'
+    # Generic Handler
     workflow = job_input.get("workflow")
     images_input = job_input.get("images")
 
     if not workflow:
         return {"error": "Missing 'workflow' in input"}
     
-    # 1. Check Server Availability
+    # 1. Check Server
     if not check_server(f"http://{COMFY_HOST}/"):
         return {"error": "ComfyUI server unreachable after retries"}
 
@@ -134,7 +134,7 @@ def handler(job):
     if not wait_for_node("RMBG"):
         return {"error": "Timeout waiting for RMBG node to load."}
 
-    # 3. Upload Input Images (if any)
+    # 3. Upload Input Images
     if images_input:
         upload_res = upload_images(images_input)
         if upload_res.get("status") == "error":
@@ -146,17 +146,20 @@ def handler(job):
     
     try:
         ws = websocket.WebSocket()
-        # === CORRECCIÓN AQUÍ: Timeout aumentado a 300 segundos ===
-        ws.connect(f"ws://{COMFY_HOST}/ws?clientId={client_id}", timeout=300)
+        
+        # === CAMBIO CRÍTICO AQUI ===
+        # Aumentamos el timeout a 1800 segundos (30 minutos)
+        # Wan2.1 es lento, necesitamos mucha paciencia.
+        ws.connect(f"ws://{COMFY_HOST}/ws?clientId={client_id}", timeout=1800)
         
         # Queue Workflow
         queue_resp = queue_workflow(workflow, client_id)
         prompt_id = queue_resp["prompt_id"]
         print(f"worker-ffgo - Queued: {prompt_id}")
         
-        # Monitor Execution via WebSocket
+        # Monitor Execution
         while True:
-            # El recv esperará hasta 300 segundos por un mensaje nuevo
+            # Ahora el recv esperará hasta 30 minutos antes de dar error
             out = ws.recv()
             if isinstance(out, str):
                 msg = json.loads(out)
@@ -208,7 +211,10 @@ def handler(job):
         return {"error": str(e)}
     finally:
         if ws:
-            ws.close()
+            try:
+                ws.close()
+            except:
+                pass
 
 # ==========================================
 # SYSTEM STARTUP CHECK
