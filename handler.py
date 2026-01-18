@@ -20,7 +20,7 @@ COMFY_HOST = "127.0.0.1:8188"
 WEBSOCKET_RECONNECT_ATTEMPTS = int(os.environ.get("WEBSOCKET_RECONNECT_ATTEMPTS", 5))
 WEBSOCKET_RECONNECT_DELAY_S = int(os.environ.get("WEBSOCKET_RECONNECT_DELAY_S", 3))
 
-# Network Volume Path for Serverless (Verification)
+# Network Volume Path for Serverless
 NETWORK_VOLUME_PATH = "/runpod-volume"
 
 # ==========================================
@@ -28,7 +28,6 @@ NETWORK_VOLUME_PATH = "/runpod-volume"
 # ==========================================
 
 def check_server(url, retries=50, delay=500):
-    """Checks if ComfyUI is reachable."""
     for i in range(retries):
         try:
             response = requests.get(url, timeout=5)
@@ -40,10 +39,6 @@ def check_server(url, retries=50, delay=500):
     return False
 
 def wait_for_node(node_name, timeout=180):
-    """
-    Waits for a specific custom node to be loaded by ComfyUI.
-    Increased timeout for heavy models like Wan2.1
-    """
     print(f"worker-ffgo - Waiting for node '{node_name}' to load...")
     start = time.time()
     while time.time() - start < timeout:
@@ -60,7 +55,6 @@ def wait_for_node(node_name, timeout=180):
     return False
 
 def upload_images(images):
-    """Uploads Base64 images to ComfyUI input directory."""
     if not images:
         return {"status": "success"}
     
@@ -86,7 +80,6 @@ def upload_images(images):
     return {"status": "success"}
 
 def queue_workflow(workflow, client_id):
-    """Submits the workflow to the queue."""
     payload = {"prompt": workflow, "client_id": client_id}
     data = json.dumps(payload).encode("utf-8")
     resp = requests.post(f"http://{COMFY_HOST}/prompt", data=data, headers={"Content-Type": "application/json"}, timeout=30)
@@ -95,13 +88,11 @@ def queue_workflow(workflow, client_id):
     return resp.json()
 
 def get_history(prompt_id):
-    """Retrieves execution history/results."""
     resp = requests.get(f"http://{COMFY_HOST}/history/{prompt_id}", timeout=30)
     resp.raise_for_status()
     return resp.json()
 
 def get_image_data(filename, subfolder, image_type):
-    """Downloads the generated image/video from ComfyUI."""
     data = {"filename": filename, "subfolder": subfolder, "type": image_type}
     query = urllib.parse.urlencode(data)
     resp = requests.get(f"http://{COMFY_HOST}/view?{query}", timeout=60)
@@ -119,51 +110,39 @@ def handler(job):
     if not job_input:
         return {"error": "No input provided"}
 
-    # Generic Handler
     workflow = job_input.get("workflow")
     images_input = job_input.get("images")
 
     if not workflow:
         return {"error": "Missing 'workflow' in input"}
     
-    # 1. Check Server
     if not check_server(f"http://{COMFY_HOST}/"):
-        return {"error": "ComfyUI server unreachable after retries"}
+        return {"error": "ComfyUI server unreachable"}
 
-    # 2. Wait for Critical Nodes
     if not wait_for_node("RMBG"):
-        return {"error": "Timeout waiting for RMBG node to load."}
+        return {"error": "Timeout waiting for RMBG node."}
 
-    # 3. Upload Input Images
     if images_input:
         upload_res = upload_images(images_input)
         if upload_res.get("status") == "error":
             return {"error": "Image upload failed", "details": upload_res}
 
-    # 4. Connect WebSocket & Execute
     ws = None
     client_id = str(uuid.uuid4())
     
     try:
         ws = websocket.WebSocket()
-        
-        # === CAMBIO CRÍTICO AQUI ===
-        # Aumentamos el timeout a 1800 segundos (30 minutos)
-        # Wan2.1 es lento, necesitamos mucha paciencia.
+        # Timeout largo para Wan2.1
         ws.connect(f"ws://{COMFY_HOST}/ws?clientId={client_id}", timeout=1800)
         
-        # Queue Workflow
         queue_resp = queue_workflow(workflow, client_id)
         prompt_id = queue_resp["prompt_id"]
         print(f"worker-ffgo - Queued: {prompt_id}")
         
-        # Monitor Execution
         while True:
-            # Ahora el recv esperará hasta 30 minutos antes de dar error
             out = ws.recv()
             if isinstance(out, str):
                 msg = json.loads(out)
-                
                 if msg["type"] == "executing":
                     data = msg["data"]
                     if data["node"] is None and data["prompt_id"] == prompt_id:
@@ -174,15 +153,21 @@ def handler(job):
                      if data["prompt_id"] == prompt_id:
                          raise ValueError(f"Execution error: {data.get('exception_message')}")
 
-        # 5. Retrieve Results
+        # === PROCESAMIENTO DE RESULTADOS ===
         history = get_history(prompt_id)
         outputs = history[prompt_id]["outputs"]
         results = []
         
+        print(f"worker-ffgo - Processing outputs for {len(outputs)} nodes...")
+
         for node_id, node_out in outputs.items():
+            print(f"worker-ffgo - Node {node_id} returned keys: {list(node_out.keys())}")
+            
+            # 1. VIDEOS (Prioridad Alta)
             if "videos" in node_out:
                 for vid in node_out["videos"]:
                     fname = vid["filename"]
+                    print(f"worker-ffgo - Found VIDEO: {fname}")
                     data = get_image_data(fname, vid.get("subfolder",""), vid.get("type"))
                     
                     if os.environ.get("BUCKET_ENDPOINT_URL"):
@@ -196,9 +181,30 @@ def handler(job):
                         b64 = base64.b64encode(data).decode("utf-8")
                         results.append({"type": "base64", "data": b64, "filename": fname})
             
-            elif "images" in node_out:
+            # 2. GIFS (Soporte añadido para VHS preview)
+            if "gifs" in node_out:
+                for gif in node_out["gifs"]:
+                    fname = gif["filename"]
+                    print(f"worker-ffgo - Found GIF: {fname}")
+                    data = get_image_data(fname, gif.get("subfolder",""), gif.get("type"))
+                    
+                    if os.environ.get("BUCKET_ENDPOINT_URL"):
+                         with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tf:
+                             tf.write(data)
+                             tf_path = tf.name
+                         s3_url = rp_upload.upload_image(job_id, tf_path)
+                         os.remove(tf_path)
+                         results.append({"type": "s3_url", "data": s3_url, "filename": fname})
+                    else:
+                        b64 = base64.b64encode(data).decode("utf-8")
+                        results.append({"type": "base64", "data": b64, "filename": fname})
+
+            # 3. IMÁGENES (Prioridad Baja - Solo si no es un nodo puramente de video)
+            if "images" in node_out:
                 for img in node_out["images"]:
                     fname = img["filename"]
+                    # Log para depuración
+                    print(f"worker-ffgo - Found IMAGE: {fname}")
                     data = get_image_data(fname, img.get("subfolder",""), img.get("type"))
                     b64 = base64.b64encode(data).decode("utf-8")
                     results.append({"type": "base64", "data": b64, "filename": fname})
@@ -216,9 +222,6 @@ def handler(job):
             except:
                 pass
 
-# ==========================================
-# SYSTEM STARTUP CHECK
-# ==========================================
 if os.path.exists(NETWORK_VOLUME_PATH):
     print(f"worker-ffgo - '{NETWORK_VOLUME_PATH}' detected.")
 else:
